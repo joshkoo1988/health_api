@@ -22,45 +22,48 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-
 // Exported function that the app calls
 export async function fetchAllPatients(): Promise<Patient[]> {
   const allPatients: Patient[] = [];
   let page = 1;
   let hasNext = true;
 
-while (hasNext) {
-  try {
-    console.log(`Fetching page ${page}...`);
-    const response = await axios.get(
-      `${WEB_API_URL}/patients?page=${page}&limit=5`,
-      {
-        headers: { 'x-api-key': HEALTH_API_KEY },
-        timeout: 10000,
+  while (hasNext) {
+    try {
+      console.log(`Fetching page ${page}...`);
+      const response = await axios.get<PaginatedResponse>(
+        `${WEB_API_URL}/patients?page=${page}&limit=5`,
+        {
+          headers: { 'x-api-key': HEALTH_API_KEY },
+          timeout: 10000,
+        }
+      );
+
+      const result = response.data;
+
+      if (!result || !Array.isArray(result.data) || !result.pagination) {
+        console.warn(`Malformed response on page ${page}. Retrying after 20s...`);
+        await sleep(20000);
+        continue; // try the same page again
       }
-    );
 
-    const result = response.data;
+      const { data, pagination } = result;
+      allPatients.push(...data);
+      hasNext = pagination.hasNext;
+      console.log(`Page ${page} fetched (${data.length} patients).`);
+      page++;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 429) {
+        console.warn(`Rate limit hit on page ${page}. Waiting 20s then retrying...`);
+        await sleep(20000);
+        continue;
+      }
 
-    if (!result || !Array.isArray(result.data) || !result.pagination) {
-      console.warn(`Malformed response on page ${page}. Retrying after 20s...`);
-      await sleep(20000);
-      continue; //try the same page again
+      console.error(`Failed to fetch page ${page}:`, error.message);
+      throw error;
     }
-
-    const { data, pagination } = result;
-    allPatients.push(...data);
-    hasNext = pagination.hasNext;
-    page++;
-
-    console.log(`Page ${page - 1} fetched (${data.length} patients). Waiting 20s...`);
-    await sleep(20000);
-  } catch (error) {
-    console.error(`Failed to fetch page ${page}:`, (error as any).message);
-    throw error;
   }
-}
-
 
   return allPatients;
 }
